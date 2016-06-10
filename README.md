@@ -11,11 +11,11 @@ This script performs full backup and incremental backup of MySQL databases, and 
 The backup stands on the basis of the full backup once a day, So the backup path uses the date string.
 
 Features:
-	- Full backup all database
-	- Incremental Backup based on previous full backup 
-	- Compress backup files
-	- Upload backup files to AWS S3
-	- Purge old local backups
+  - Full backup all database
+  - Incremental Backup based on previous full backup 
+  - Compress backup files
+  - Upload backup files to AWS S3
+  - Purge old local backups
 
 # Requirements
   - mysql
