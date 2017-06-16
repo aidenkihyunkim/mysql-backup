@@ -16,51 +16,52 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-ARCHIVE_PERIOD=15
-BINLOG_PATH=/home/mysql/data
-LOCAL_BACKUP_PATH=/home/backup/mysql
-SYSTEM_NAME=$(echo $HOSTNAME | tr "[:lower:]" "[:upper:]")
+ARCHIVE_PERIOD=30
+BINLOG_PATH=/var/lib/mysql
+BINLOG_FILE=mysql-bin
+LOCAL_BACKUP_PATH=/backup/mysql
+SYSTEM_NAME=$(echo "${HOSTNAME}" | tr "[:lower:]" "[:upper:]")
 S3_BACKUP_PATH=s3://s3_bucket_name/${SYSTEM_NAME}/mysql
 STATUS_FILE_PATH=${LOCAL_BACKUP_PATH}/mysql-backup-status
 
 ## prepare path
 if ! [ -d ${LOCAL_BACKUP_PATH} ]; then
-	/bin/mkdir -p ${LOCAL_BACKUP_PATH}
+	mkdir -p ${LOCAL_BACKUP_PATH}
 fi
 
 # full backup 
 if [[ "$1" == "full" ]]; then
 
-	echo "MySQL Full Backup started `date`..."
+	echo "MySQL Full Backup started $(date)..."
 
 	# prepare directory
 	TSTR=$(date +"%Y%m%d_%H%M%S")
 	BACKUP_PATH=${LOCAL_BACKUP_PATH}/${TSTR}
 	if ! [[ -d ${BACKUP_PATH} ]]; then
-		/bin/mkdir -p ${BACKUP_PATH}
+		mkdir -p "${BACKUP_PATH}"
 	fi
-	/bin/rm -rf ${BACKUP_PATH}/*
+	rm -rf "${BACKUP_PATH:?}/"*
 
 	# get old full backup information
 	if [[ -r ${STATUS_FILE_PATH} ]]; then
-		OLD_BACKUP_PATH=`/bin/cat ${STATUS_FILE_PATH} | /bin/sed -n '1p'`
-		OLD_START_BINLOG=`/bin/cat ${STATUS_FILE_PATH} | /bin/sed -n '2p'`
+		OLD_BACKUP_PATH=$(sed -n '1p' ${STATUS_FILE_PATH})
+		OLD_START_BINLOG=$(sed -n '2p' ${STATUS_FILE_PATH})
 	fi
 
 	# full backup
-	/usr/bin/mysqldump --all-databases --routines --events --hex-blob --single-transaction --flush-logs --master-data=2 --include-master-host-port > ${BACKUP_PATH}/full_backup-${TSTR}.sql
-	START_BINLOG=`/bin/sed -rn "1,50 s/^.+ MASTER_LOG_FILE\='(mysql-bin\.[0-9]+)'.+$/\1/p"  ${BACKUP_PATH}/full_backup-${TSTR}.sql | /bin/sed -n '1p'`
+	mysqldump --all-databases --routines --events --hex-blob --single-transaction --flush-logs --master-data=2 --include-master-host-port > "${BACKUP_PATH}/full_backup-${TSTR}.sql"
+	START_BINLOG=$(sed -rn "1,50 s/^.+ MASTER_LOG_FILE\='(${BINLOG_FILE}\.[0-9]+)'.+$/\1/p" "${BACKUP_PATH}/full_backup-${TSTR}.sql" | sed -n '1p')
 	echo "${BACKUP_PATH}" > ${STATUS_FILE_PATH}
 	echo "${START_BINLOG}" >> ${STATUS_FILE_PATH}
-	/bin/gzip ${BACKUP_PATH}/full_backup-${TSTR}.sql
+	gzip "${BACKUP_PATH}/full_backup-${TSTR}.sql"
 
 	# finalize previous full backup data
 	if [[ -n ${OLD_BACKUP_PATH} ]] && [[ -n ${OLD_START_BINLOG} ]] && [[ -d ${OLD_BACKUP_PATH} ]]; then
-		for FILE in `ls ${BINLOG_PATH}/mysql-bin.?????? | sort -g`
+		for FILE in $(find ${BINLOG_PATH} -maxdepth 1 -type f -name "${BINLOG_FILE}.??????" | sort -g)
 		do
 			if [[ "${FILE}" < "${BINLOG_PATH}/${START_BINLOG}" ]]; then
 				if [[ "${FILE}" == "${BINLOG_PATH}/${OLD_START_BINLOG}" ]] || [[ "${FILE}" > "${BINLOG_PATH}/${OLD_START_BINLOG}" ]]; then
-					/bin/cp -afpu ${FILE} ${OLD_BACKUP_PATH}/
+					/bin/cp -afpu "${FILE}" "${OLD_BACKUP_PATH}/"
 				fi
 			fi
 		done
@@ -76,9 +77,9 @@ else
 		echo "Could not find full backup status file."
 		exit 1
 	fi
-	BACKUP_PATH=`/bin/cat ${STATUS_FILE_PATH} | /bin/sed -n '1p'`
-	START_BINLOG=`/bin/cat ${STATUS_FILE_PATH} | /bin/sed -n '2p'`
-	TSTR=`/bin/echo ${BACKUP_PATH} | sed -rn "s/^.+\/(20[0-9]{6}_[0-9]{6})$/\1/p"`
+	BACKUP_PATH=$(sed -n '1p' ${STATUS_FILE_PATH})
+	START_BINLOG=$(sed -n '2p' ${STATUS_FILE_PATH})
+	TSTR=$(echo "${BACKUP_PATH}" | sed -rn "s/^.+\/(20[0-9]{6}_[0-9]{6})$/\1/p")
 	if ! [[ -d ${BACKUP_PATH} ]]; then
 		echo "Could not find last full backup path."
 		exit 2
@@ -89,13 +90,13 @@ else
 	fi
 
 	# flush log & copy bin-log
-	/usr/bin/mysqladmin flush-logs
-	BINLOG_CURR=`ls -d ${BINLOG_PATH}/mysql-bin.?????? | sed 's/^.*\.//' | sort -g | tail -n 1`
-	for FILE in `ls ${BINLOG_PATH}/mysql-bin.?????? | sort -g`
+	mysqladmin flush-logs
+	BINLOG_CURR=$(find ${BINLOG_PATH} -maxdepth 1 -type f -name "${BINLOG_FILE}.??????" | sed 's/^.*\.//' | sort -g | tail -n 1)
+	for FILE in $(find ${BINLOG_PATH} -maxdepth 1 -type f -name "${BINLOG_FILE}.??????" | sort -g)
 	do
-		if [[ "${BINLOG_PATH}/mysql-bin.${BINLOG_CURR}" != "${FILE}" ]]; then
+		if [[ "${BINLOG_PATH}/${BINLOG_FILE}.${BINLOG_CURR}" != "${FILE}" ]]; then
 			if [[ "${FILE}" == "${BINLOG_PATH}/${START_BINLOG}" ]] || [[ "${FILE}" > "${BINLOG_PATH}/${START_BINLOG}" ]]; then
-				/bin/cp -afpu ${FILE} ${BACKUP_PATH}/
+				cp -afpu "${FILE}" "${BACKUP_PATH}/"
 			fi
 		fi
 	done
@@ -103,14 +104,12 @@ else
 fi
 
 # sync to s3 bucket
-/usr/bin/aws s3 sync ${BACKUP_PATH}/ ${S3_BACKUP_PATH}/${TSTR}/
+aws s3 sync "${BACKUP_PATH}/" "${S3_BACKUP_PATH}/${TSTR}/"
 
 # remove old backups
-oldDirs=($(/bin/find ${LOCAL_BACKUP_PATH} -type d -mtime +${ARCHIVE_PERIOD}))
-oldDirLen=${#oldDirs[@]}
-for (( i=0; i<${oldDirLen}; i++ ));
+for DIR in $(find ${LOCAL_BACKUP_PATH} -maxdepth 1 -type d -mtime +${ARCHIVE_PERIOD} | sort -g)
 do
-	/bin/rm -rf ${oldDirs[$i]}
+    rm -rf "${DIR}"
 done
 
 exit 0
