@@ -12,7 +12,7 @@ The backup stands on the basis of the full backup once a day, So the backup path
 
 Features:
   - Full backup all database
-  - Incremental Backup based on previous full backup 
+  - Incremental Backup based on previous full backup
   - Compress backup files
   - Upload backup files to AWS S3
   - Purge old local backups
@@ -34,8 +34,8 @@ Features:
 ## Version 1.0
 2014-09-06:
   First release.
-  Commit the first version what been using in my production environments. 
+  Commit the first version what been using in my production environments.
 
 # Copyright
-Copyright © 2014 Aiden Kim <aiden.kh.kim@gmail.com>.
-Released under [GNU GPL version 3 or higher](http://www.gnu.org/licenses/gpl.html).
+Copyright © 2018 Aiden Kim <aiden.kh.kim@gmail.com>.
+Released under MIT License.
